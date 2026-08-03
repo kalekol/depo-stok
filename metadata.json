@@ -1,0 +1,6 @@
+{
+  "name": "Mobilya Depo & Koli Stok Takip Sistemi",
+  "description": "Çoklu koli yapısına sahip mobilya ve depo ürünleri için kamera/barkod okuyucu destekli, takım kontrolü yapan stok takip ve etiket uygulaması.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
