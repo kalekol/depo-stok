@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, PackageItem, StockLogItem, ScanActionType } from './types';
 import {
   loadProductsFromStorage,
@@ -18,6 +18,8 @@ import { AddProductModal } from './components/AddProductModal';
 import { StockAdjustModal } from './components/StockAdjustModal';
 import { StockHistoryModal } from './components/StockHistoryModal';
 import { CategoryManagerModal } from './components/CategoryManagerModal';
+import { syncToFirebase, stokDokumanRef } from './lib/firebase';
+import { onSnapshot } from 'firebase/firestore';
 import {
   Search,
   Filter,
@@ -37,6 +39,18 @@ import {
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [logs, setLogs] = useState<StockLogItem[]>([]);
+
+  // Refs to avoid stale closures in Firestore snapshot callback
+  const productsRef = useRef<Product[]>(products);
+  const logsRef = useRef<StockLogItem[]>(logs);
+
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+
+  useEffect(() => {
+    logsRef.current = logs;
+  }, [logs]);
 
   // Search and Filtering
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -58,23 +72,63 @@ export default function App() {
   const [selectedPackage, setSelectedPackage] = useState<PackageItem | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Load from storage on mount
+  // Load from local storage initially, then sync with Firebase in real time
   useEffect(() => {
     const loadedProducts = loadProductsFromStorage();
     const loadedLogs = loadLogsFromStorage();
     setProducts(loadedProducts);
     setLogs(loadedLogs);
+
+    let isInitialLocal = true;
+
+    const unsubscribe = onSnapshot(
+      stokDokumanRef,
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const bulutData = docSnapshot.data();
+          const remoteProducts = bulutData.products || [];
+          const remoteLogs = bulutData.logs || [];
+
+          if (JSON.stringify(productsRef.current) !== JSON.stringify(remoteProducts)) {
+            setProducts(remoteProducts);
+            saveProductsToStorage(remoteProducts);
+          }
+
+          if (JSON.stringify(logsRef.current) !== JSON.stringify(remoteLogs)) {
+            setLogs(remoteLogs);
+            saveLogsToStorage(remoteLogs);
+          }
+
+          isInitialLocal = false;
+        } else if (isInitialLocal) {
+          // If Firestore is empty initially, seed it with local/demo data
+          syncToFirebase(loadedProducts, loadedLogs);
+          isInitialLocal = false;
+        }
+      },
+      (error) => {
+        console.error('Firebase canlı dinleme hatası:', error);
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
-  // Save changes to storage
-  const persistProducts = (updated: Product[]) => {
-    setProducts(updated);
-    saveProductsToStorage(updated);
+  // Helper to persist state both to LocalStorage and Firebase Cloud
+  const persistProductsAndLogs = (newProducts: Product[], newLogs: StockLogItem[]) => {
+    setProducts(newProducts);
+    setLogs(newLogs);
+    saveProductsToStorage(newProducts);
+    saveLogsToStorage(newLogs);
+    syncToFirebase(newProducts, newLogs);
   };
 
-  const persistLogs = (updated: StockLogItem[]) => {
-    setLogs(updated);
-    saveLogsToStorage(updated);
+  const persistProducts = (updatedProducts: Product[]) => {
+    persistProductsAndLogs(updatedProducts, logsRef.current);
+  };
+
+  const persistLogs = (updatedLogs: StockLogItem[]) => {
+    persistProductsAndLogs(productsRef.current, updatedLogs);
   };
 
   // Add Log Item helper
@@ -95,7 +149,7 @@ export default function App() {
       productName: product.name,
       koliId: pkg ? pkg.koliId : 'ALL',
       koliName: pkg ? pkg.name : 'Tüm Koliler Eşzamanlı',
-      koliBarcode: pkg ? pkg.barcode : product.sku,
+      koliBarcode: pkg ? pkg.barcode : (product.sku || 'SKU'),
       action,
       quantityChange: change,
       previousQty: oldQty,
@@ -103,7 +157,7 @@ export default function App() {
       reason,
       source,
     };
-    const nextLogs = [logItem, ...logs.slice(0, 199)]; // retain latest 200 logs
+    const nextLogs = [logItem, ...logsRef.current.slice(0, 199)]; // retain latest 200 logs
     persistLogs(nextLogs);
     return logItem;
   };
@@ -300,8 +354,7 @@ export default function App() {
       )
     ) {
       const { products: defaultProds, logs: defaultLogs, categories: defaultCats } = resetToDemoData();
-      setProducts(defaultProds);
-      setLogs(defaultLogs);
+      persistProductsAndLogs(defaultProds, defaultLogs);
       setStoredCategories(defaultCats);
     }
   };
@@ -323,7 +376,7 @@ export default function App() {
       // search match
       const matchesSearch =
         prod.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        prod.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         prod.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (prod.location || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         prod.packages.some(
