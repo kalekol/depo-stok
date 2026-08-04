@@ -5,7 +5,6 @@ import {
   saveProductsToStorage,
   loadLogsFromStorage,
   saveLogsToStorage,
-  resetToDemoData,
   exportToCSV,
   loadCategoriesFromStorage,
 } from './lib/storage';
@@ -346,19 +345,6 @@ export default function App() {
     document.body.removeChild(a);
   };
 
-  // Reset demo
-  const handleResetDemo = () => {
-    if (
-      window.confirm(
-        'Tüm mevcut ürünler silinip, Alesta Gardırop, Nordic Masa, Verona Koltuk gibi örnek mobilya verileri ve koli yapıları yeniden yüklenecektir. Onaylıyor musunuz?'
-      )
-    ) {
-      const { products: defaultProds, logs: defaultLogs, categories: defaultCats } = resetToDemoData();
-      persistProductsAndLogs(defaultProds, defaultLogs);
-      setStoredCategories(defaultCats);
-    }
-  };
-
   // Calculate Warehouse Stats
   const stats = useMemo(() => calculateWarehouseStats(products), [products]);
 
@@ -413,7 +399,6 @@ export default function App() {
         }}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onExportCSV={handleExportCSV}
-        onResetDemo={handleResetDemo}
         totalProducts={stats.totalProducts}
         totalCompleteSets={stats.totalCompleteSets}
       />

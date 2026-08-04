@@ -44,17 +44,16 @@ export function loadProductsFromStorage(): Product[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
     if (!raw) {
-      saveProductsToStorage(INITIAL_PRODUCTS);
-      return INITIAL_PRODUCTS;
+      return [];
     }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
+    if (Array.isArray(parsed)) {
       return parsed;
     }
-    return INITIAL_PRODUCTS;
+    return [];
   } catch (e) {
     console.warn('Error loading products from storage:', e);
-    return INITIAL_PRODUCTS;
+    return [];
   }
 }
 
@@ -85,26 +84,11 @@ export function saveLogsToStorage(logs: StockLogItem[]): void {
 }
 
 export function resetToDemoData(): { products: Product[]; logs: StockLogItem[]; categories: CategoryItem[] } {
-  saveProductsToStorage(INITIAL_PRODUCTS);
+  saveProductsToStorage([]);
   saveCategoriesToStorage(DEFAULT_CATEGORIES);
-  const initialLog: StockLogItem = {
-    id: 'log-demo-reset-' + Date.now(),
-    timestamp: new Date().toISOString(),
-    productId: 'system',
-    productName: 'Sistem Örnek Veri Yükleme',
-    koliId: 'all',
-    koliName: 'Tüm Koliler',
-    koliBarcode: 'DEMO-DATA',
-    action: 'SET_ADJUST',
-    quantityChange: 0,
-    previousQty: 0,
-    newQty: 0,
-    reason: 'Örnek mobilya ve koli verilerine sıfırlandı',
-    source: 'MANUAL',
-  };
-  const logs = [initialLog];
+  const logs: StockLogItem[] = [];
   saveLogsToStorage(logs);
-  return { products: INITIAL_PRODUCTS, logs, categories: DEFAULT_CATEGORIES };
+  return { products: [], logs, categories: DEFAULT_CATEGORIES };
 }
 
 /**

@@ -6,9 +6,6 @@ import {
   PlusCircle,
   History,
   Download,
-  RotateCcw,
-  Smartphone,
-  Laptop,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -17,7 +14,6 @@ interface NavbarProps {
   onOpenAddProduct: () => void;
   onOpenHistory: () => void;
   onExportCSV: () => void;
-  onResetDemo: () => void;
   totalProducts: number;
   totalCompleteSets: number;
 }
@@ -28,7 +24,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddProduct,
   onOpenHistory,
   onExportCSV,
-  onResetDemo,
   totalProducts,
   totalCompleteSets,
 }) => {
@@ -90,7 +85,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <History className="w-5 h-5" />
             </button>
 
-            {/* Excel CSV & Demo Reset dropdown / icons */}
+            {/* Excel CSV */}
             <button
               onClick={onExportCSV}
               className="hidden lg:flex items-center space-x-1.5 px-3 py-2 bg-gray-800/80 hover:bg-gray-800 text-xs text-gray-300 hover:text-white rounded-xl border border-gray-700 transition"
@@ -98,14 +93,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Download className="w-4 h-4" />
               <span>Excel (CSV)</span>
-            </button>
-
-            <button
-              onClick={onResetDemo}
-              className="p-2 text-gray-500 hover:text-gray-300 rounded-lg hover:bg-gray-800 transition"
-              title="Örnek Mobilya Verilerini Yükle"
-            >
-              <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
