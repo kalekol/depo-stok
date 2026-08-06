@@ -9,6 +9,7 @@ interface AddProductModalProps {
   onSave: (productData: Omit<Product, 'id' | 'updatedAt'>, editId?: string) => void;
   onDelete?: (product: Product) => void;
   editingProduct?: Product | null;
+  initialBarcode?: string | null;
 }
 
 export const AddProductModal: React.FC<AddProductModalProps> = ({
@@ -17,6 +18,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   onSave,
   onDelete,
   editingProduct,
+  initialBarcode,
 }) => {
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
@@ -50,13 +52,14 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       const defaultSku = 'DLB-YENI-' + Math.floor(100 + Math.random() * 900);
       setName('');
       setSku(defaultSku);
-      setNotes('3 koliden oluşan mobilya takımı');
+      setNotes('');
+      const firstBarcode = initialBarcode || '8691000' + Math.floor(100000 + Math.random() * 900000);
       setPackages([
         {
           koliId: `pkg-1-${Date.now()}`,
           koliIndex: 1,
           name: 'Koli 1/3',
-          barcode: '8691000' + Math.floor(100000 + Math.random() * 900000),
+          barcode: firstBarcode,
           quantity: 0,
         },
         {
@@ -75,7 +78,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         },
       ]);
     }
-  }, [editingProduct, isOpen]);
+  }, [editingProduct, isOpen, initialBarcode]);
 
   if (!isOpen) return null;
 

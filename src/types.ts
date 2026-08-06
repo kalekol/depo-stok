@@ -24,7 +24,7 @@ export interface CategoryItem {
   name: string;
 }
 
-export type ScanActionType = 'IN' | 'OUT' | 'INFO';
+export type ScanActionType = 'IN' | 'OUT' | 'INFO' | 'SET';
 
 export interface StockLogItem {
   id: string;

@@ -17,6 +17,7 @@ import { AddProductModal } from './components/AddProductModal';
 import { StockAdjustModal } from './components/StockAdjustModal';
 import { StockHistoryModal } from './components/StockHistoryModal';
 import { CategoryManagerModal } from './components/CategoryManagerModal';
+import { ExportModal } from './components/ExportModal';
 import { syncToFirebase, stokDokumanRef } from './lib/firebase';
 import { onSnapshot } from 'firebase/firestore';
 import {
@@ -64,12 +65,14 @@ export default function App() {
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState<boolean>(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [storedCategories, setStoredCategories] = useState(() => loadCategoriesFromStorage());
 
   // Selected items for Modals
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedPackage, setSelectedPackage] = useState<PackageItem | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [initialBarcodeForAdd, setInitialBarcodeForAdd] = useState<string | null>(null);
 
   // Load from local storage initially, then sync with Firebase in real time
   useEffect(() => {
@@ -166,7 +169,8 @@ export default function App() {
     product: Product,
     pkg: PackageItem,
     actionType: ScanActionType,
-    source: 'BARCODE_CAMERA' | 'BARCODE_USB' | 'MANUAL'
+    source: 'BARCODE_CAMERA' | 'BARCODE_USB' | 'MANUAL',
+    targetQty?: number
   ): { updatedProduct: Product; logItem: StockLogItem | null } => {
     const oldQty = pkg.quantity;
     let newQty = oldQty;
@@ -181,8 +185,16 @@ export default function App() {
       newQty = Math.max(0, oldQty - 1);
       change = newQty - oldQty;
       reason = 'Barkod Okuma ile Sevkiyat / Çıkış (-1)';
+    } else if (actionType === 'SET' && typeof targetQty === 'number') {
+      newQty = Math.max(0, targetQty);
+      change = newQty - oldQty;
+      reason = `Barkod Terminalinde Miktar Güncellendi (${oldQty} -> ${newQty})`;
     } else {
       // INFO mode: don't change quantity
+      return { updatedProduct: product, logItem: null };
+    }
+
+    if (change === 0 && actionType === 'SET') {
       return { updatedProduct: product, logItem: null };
     }
 
@@ -202,7 +214,7 @@ export default function App() {
     const logItem = appendLog(
       updatedProduct,
       pkg,
-      actionType === 'IN' ? 'IN' : 'OUT',
+      change > 0 ? 'IN' : change < 0 ? 'OUT' : 'SET_ADJUST',
       change,
       oldQty,
       newQty,
@@ -332,17 +344,9 @@ export default function App() {
     persistProducts(updated);
   };
 
-  // Export CSV
+  // Export CSV Modal
   const handleExportCSV = () => {
-    const csvStr = exportToCSV(products);
-    const blob = new Blob(['\uFEFF' + csvStr], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mobilya_koli_stok_raporu_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    setIsExportModalOpen(true);
   };
 
   // Calculate Warehouse Stats
@@ -482,158 +486,130 @@ export default function App() {
           </div>
         </section>
 
-        {/* Action Callout Bar for Easy Mobile & PC Operation */}
-        <section className="bg-gray-900 text-white rounded-2xl p-5 sm:p-6 shadow-lg flex flex-col md:flex-row items-center justify-between gap-4 border border-gray-800">
-          <div className="flex items-center space-x-4">
-            <div className="p-3 bg-amber-500 text-gray-950 rounded-xl hidden sm:block">
-              <Barcode className="w-8 h-8 stroke-[2.5]" />
-            </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold">
-                Mobilya Kolilerini Hızlı Barkod ile Giriş / Çıkış Yapın
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-300 mt-1">
-                Örn: A Dolabı'nın <strong>3 kolisi (1/3, 2/3, 3/3)</strong> için herhangi bir koliyi
-                okutun, anında stoğu ve tam takım durumunu güncelleyin.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-3 w-full md:w-auto">
-            <button
-              onClick={() => setIsQuickScanOpen(true)}
-              className="flex-1 md:flex-initial px-6 py-3 bg-amber-500 hover:bg-amber-400 text-gray-950 font-black text-sm rounded-xl shadow-md transition flex items-center justify-center space-x-2"
-            >
-              <Barcode className="w-5 h-5 stroke-[2.5]" />
-              <span>Kamera / USB Barkod Terminalini Aç</span>
-            </button>
-            <button
-              onClick={() => {
-                setSelectedProduct(products[0] || null);
-                setSelectedPackage(null);
-                setIsPrintModalOpen(true);
-              }}
-              className="px-4 py-3 bg-gray-800 hover:bg-gray-700 text-white font-semibold text-sm rounded-xl border border-gray-700 transition flex items-center space-x-2"
-              title="Etiket Yazdır"
-            >
-              <Tag className="w-4 h-4 text-amber-400" />
-              <span className="hidden sm:inline">Etiketler</span>
-            </button>
-          </div>
-        </section>
-
-        {/* Filter and Search Bar */}
-        <section aria-label="Ürün Arama ve Filtreleme">
-          <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
-            {/* Search Input */}
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Mobilya adı, koli tanımı veya koli barkodu ara (Örn: Alesta, 8690...)"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-300 bg-gray-50/50 text-sm focus:border-amber-500 focus:bg-white focus:outline-none transition"
-              />
-            </div>
-
-            {/* Category Filter */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center space-x-1 text-xs font-semibold text-gray-500">
-                <Filter className="w-4 h-4" />
-                <span className="hidden sm:inline">Kategori:</span>
+        {/* Filter, Search & View Mode Toolbar */}
+        <section aria-label="Ürün Arama, Filtreleme ve Görünüm">
+          <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm flex flex-col space-y-3">
+            {/* Top row: Search input + Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Mobilya adı, koli tanımı veya koli barkodu ara..."
+                  className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-300 bg-gray-50/50 text-xs sm:text-sm focus:border-amber-500 focus:bg-white focus:outline-none transition"
+                />
               </div>
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold focus:border-amber-500 focus:outline-none"
-              >
-                <option value="ALL">Tüm Kategoriler</option>
-                {categories
-                  .filter((c) => c !== 'ALL')
-                  .map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-              </select>
 
-              {/* Stock Status Filter */}
-              <select
-                value={stockStatusFilter}
-                onChange={(e) =>
-                  setStockStatusFilter(e.target.value as 'ALL' | 'READY' | 'INCOMPLETE')
-                }
-                className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold focus:border-amber-500 focus:outline-none"
-              >
-                <option value="ALL">Tüm Stok Durumları</option>
-                <option value="READY">✅ Hazır Sevk Edilebilir Takımlar</option>
-                <option value="INCOMPLETE">🚨 Eksik Kolili / Hazır Olmayanlar</option>
-              </select>
+              <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                <button
+                  onClick={() => setIsQuickScanOpen(true)}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-gray-950 font-extrabold text-xs rounded-xl shadow-sm transition flex items-center justify-center space-x-1.5"
+                >
+                  <Barcode className="w-4 h-4 stroke-[2.5]" />
+                  <span>Barkod Tara</span>
+                </button>
 
-              {/* Reset filter button if active */}
-              {(searchTerm || categoryFilter !== 'ALL' || stockStatusFilter !== 'ALL') && (
                 <button
                   onClick={() => {
-                    setSearchTerm('');
-                    setCategoryFilter('ALL');
-                    setStockStatusFilter('ALL');
+                    setSelectedProduct(products[0] || null);
+                    setSelectedPackage(null);
+                    setIsPrintModalOpen(true);
                   }}
-                  className="px-3 py-2 text-xs font-semibold text-amber-800 hover:text-amber-900 bg-amber-50 rounded-xl border border-amber-200 transition"
+                  className="px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white font-semibold text-xs rounded-xl transition flex items-center space-x-1.5"
+                  title="Etiket Yazdır"
                 >
-                  Filtreleri Sıfırla
+                  <Tag className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Etiketler</span>
                 </button>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Görüntüleme Modu Sorusu */}
-        <section aria-label="Görüntüleme Modu Tercihi" className="mb-6">
-          <div className="bg-gradient-to-r from-amber-500/10 to-amber-600/5 rounded-2xl p-5 border border-amber-500/20 shadow-sm">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <h3 className="text-sm font-extrabold text-amber-950 flex items-center gap-1.5">
-                  <Eye className="w-4 h-4 text-amber-600" />
-                  STOKLARINIZI NASIL GÖRÜNTÜLEMEK İSTERSİNİZ?
-                </h3>
-                <p className="text-xs text-amber-900/80 max-w-xl">
-                  Deponuzdaki stokları koli olarak (tek tek barkod ve koli bazında) veya ürün olarak (komple takım bazında) ayrı ayrı görüntüleyebilirsiniz. İstediğiniz seçeneğe tıklayın:
-                </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+            </div>
+
+            {/* Bottom row: Filters + Compact View Mode Switcher */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center space-x-1 text-xs font-semibold text-gray-500">
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>Kategori:</span>
+                </div>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="ALL">Tüm Kategoriler</option>
+                  {categories
+                    .filter((c) => c !== 'ALL')
+                    .map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                </select>
+
+                <select
+                  value={stockStatusFilter}
+                  onChange={(e) =>
+                    setStockStatusFilter(e.target.value as 'ALL' | 'READY' | 'INCOMPLETE')
+                  }
+                  className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="ALL">Tüm Stok Durumları</option>
+                  <option value="READY">✅ Hazır Sevk Edilebilir</option>
+                  <option value="INCOMPLETE">🚨 Eksik Kolili Takımlar</option>
+                </select>
+
+                {(searchTerm || categoryFilter !== 'ALL' || stockStatusFilter !== 'ALL') && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm('');
+                      setCategoryFilter('ALL');
+                      setStockStatusFilter('ALL');
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:text-amber-900 bg-amber-50 rounded-lg border border-amber-200 transition"
+                  >
+                    Sıfırla
+                  </button>
+                )}
+              </div>
+
+              {/* Segmented View Switcher */}
+              <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200">
                 <button
                   onClick={() => setViewMode('BOTH')}
-                  className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center space-x-1 ${
                     viewMode === 'BOTH'
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      ? 'bg-white text-gray-900 shadow-sm font-black'
+                      : 'text-gray-500 hover:text-gray-800'
                   }`}
                 >
                   <Layers className="w-3.5 h-3.5" />
-                  <span>Ürün & Koli Detaylı</span>
+                  <span className="hidden sm:inline">Detaylı</span>
                 </button>
+
                 <button
                   onClick={() => setViewMode('PRODUCT_ONLY')}
-                  className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center space-x-1 ${
                     viewMode === 'PRODUCT_ONLY'
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      ? 'bg-white text-gray-900 shadow-sm font-black'
+                      : 'text-gray-500 hover:text-gray-800'
                   }`}
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Sadece Ürün Özetleri</span>
+                  <span className="hidden sm:inline">Sadece Ürün</span>
                 </button>
+
                 <button
                   onClick={() => setViewMode('PACKAGES_ONLY')}
-                  className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center space-x-1 ${
                     viewMode === 'PACKAGES_ONLY'
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      ? 'bg-white text-gray-900 shadow-sm font-black'
+                      : 'text-gray-500 hover:text-gray-800'
                   }`}
                 >
                   <Package className="w-3.5 h-3.5" />
-                  <span>Koli Olarak Gör (Liste)</span>
+                  <span className="hidden sm:inline">Koli Listesi</span>
                 </button>
               </div>
             </div>
@@ -767,6 +743,101 @@ export default function App() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : viewMode === 'PRODUCT_ONLY' ? (
+            /* Sadece Ürün Stoğu Görünümü (Sade Alt Alta Liste) */
+            <div className="bg-white rounded-2xl border border-gray-200/80 overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="p-4">Kategori / Ürün Adı</th>
+                      <th className="p-4">SKU / Kod</th>
+                      <th className="p-4 text-center">Koli Yapısı</th>
+                      <th className="p-4 text-center">Hazır Tam Takım</th>
+                      <th className="p-4 text-center">Toplam Fiziksel Koli</th>
+                      <th className="p-4 text-center">Stok Durumu</th>
+                      <th className="p-4 text-right">İşlemler</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-150">
+                    {filteredProducts.map((prod) => {
+                      const setStatus = calculateCompleteSet(prod);
+                      const totalPhysical = prod.packages.reduce((sum, p) => sum + p.quantity, 0);
+                      const hasMissing = setStatus.missingPackagesToReachMax.length > 0;
+
+                      return (
+                        <tr key={prod.id} className="hover:bg-gray-50/60 transition-colors">
+                          <td className="p-4">
+                            <div className="font-bold text-gray-900 text-sm">{prod.name}</div>
+                            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">
+                              {prod.category}
+                            </div>
+                          </td>
+                          <td className="p-4 font-mono font-medium text-gray-600">
+                            {prod.sku || '-'}
+                          </td>
+                          <td className="p-4 text-center font-semibold text-gray-700">
+                            {prod.packages.length} Koli
+                          </td>
+                          <td className="p-4 text-center">
+                            <span
+                              className={`text-base font-black ${
+                                setStatus.completeSets > 0 && !hasMissing
+                                  ? 'text-emerald-700'
+                                  : setStatus.completeSets > 0
+                                  ? 'text-amber-700'
+                                  : 'text-rose-600'
+                              }`}
+                            >
+                              {setStatus.completeSets} Takım
+                            </span>
+                          </td>
+                          <td className="p-4 text-center font-bold text-gray-800">
+                            {totalPhysical} adet
+                          </td>
+                          <td className="p-4 text-center">
+                            {setStatus.completeSets > 0 && !hasMissing ? (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                ✅ Sevkiyata Hazır
+                              </span>
+                            ) : hasMissing ? (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                ⚠️ Eksik Kolili ({setStatus.missingPackagesToReachMax.length} koli eksik)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                🚨 Stok Yok / Tamamlanmamış
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 text-right space-x-1.5">
+                            <button
+                              onClick={() => {
+                                setSelectedProduct(prod);
+                                setSelectedPackage(null);
+                                setIsAdjustModalOpen(true);
+                              }}
+                              className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-semibold rounded-lg border border-gray-200 transition"
+                            >
+                              Stok / Set Düzenle
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingProduct(prod);
+                                setIsAddModalOpen(true);
+                              }}
+                              className="px-2.5 py-1.5 bg-gray-900 hover:bg-gray-800 text-amber-400 text-xs font-semibold rounded-lg transition"
+                            >
+                              Düzenle
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -954,6 +1025,20 @@ export default function App() {
         onClose={() => setIsQuickScanOpen(false)}
         products={products}
         onScanAction={handleScanAction}
+        onOpenAddProductWithBarcode={(barcode) => {
+          setEditingProduct(null);
+          setInitialBarcodeForAdd(barcode);
+          setIsAddModalOpen(true);
+        }}
+        onOpenEditProduct={(prod) => {
+          setEditingProduct(prod);
+          setIsAddModalOpen(true);
+        }}
+        onOpenStockAdjust={(prod, pkg) => {
+          setSelectedProduct(prod);
+          setSelectedPackage(pkg);
+          setIsAdjustModalOpen(true);
+        }}
       />
 
       {/* 2. Barcode & Label Print Modal */}
@@ -971,10 +1056,12 @@ export default function App() {
         onClose={() => {
           setIsAddModalOpen(false);
           setEditingProduct(null);
+          setInitialBarcodeForAdd(null);
         }}
         onSave={handleSaveProduct}
         onDelete={handleDeleteProduct}
         editingProduct={editingProduct}
+        initialBarcode={initialBarcodeForAdd}
       />
 
       {/* 4. Manual Stock Adjust Modal */}
@@ -1007,6 +1094,13 @@ export default function App() {
         onCategoriesUpdated={(updatedCats) => {
           setStoredCategories(updatedCats);
         }}
+      />
+
+      {/* 7. Export CSV Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        products={products}
       />
     </div>
   );
